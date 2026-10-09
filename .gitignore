@@ -1,1 +1,6 @@
-data/
+# Keep the data/ folder in git, but not the CSVs inside it (they are ~1.3 GB)
+data/*
+!data/.gitkeep
+
+.venv/
+.vscode/
