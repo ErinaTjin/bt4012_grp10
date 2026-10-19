@@ -1,0 +1,35 @@
+{
+  "model": "xgboost",
+  "params": {
+    "n_estimators": 477,
+    "learning_rate": 0.07294723991702877,
+    "max_depth": 3,
+    "min_child_weight": 7.898594245470395,
+    "subsample": 0.8478777731058872,
+    "colsample_bytree": 0.6718663639765685,
+    "reg_lambda": 2.515289651928717,
+    "scale_pos_weight": 25.906544233330774
+  },
+  "features": {
+    "missing_flags": true,
+    "drifting": "ratio",
+    "valid_phones": false,
+    "include_age": true
+  },
+  "trained_on_months": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "threshold_picked_on_months": [
+    5
+  ],
+  "thresholds": {
+    "0": 0.4748513400554657,
+    "1": 0.47353819012641907,
+    "2": 0.47703808546066284,
+    "3": 0.4765724837779999,
+    "4": 0.473818302154541
+  }
+}

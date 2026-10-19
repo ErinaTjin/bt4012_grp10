@@ -5,9 +5,15 @@ Fraud detection on the [Bank Account Fraud (BAF) Dataset Suite](https://www.kagg
 ## Repository structure
 
 ```
-data/         # the BAF CSVs go here (not committed, see "Getting the data")
+data/                 # the BAF CSVs go here (not committed, see "Getting the data")
 notebooks/
-  01_eda.ipynb
+  01_eda.ipynb                              # exploratory data analysis
+  02_feature_engineering_and_models.ipynb   # features, models, tuning, final model, test results
+configs/
+  final_model.json    # the frozen final model: settings, features, thresholds (written by notebook 02)
+outputs/              # the latest final model and its test predictions (written by notebook 02)
+  models/             #   the trained model for each seed
+  predictions/        #   scores on months 6-7 of Base and all 5 variants
 requirements.txt
 ```
 
@@ -56,4 +62,89 @@ The dataset is about 1.3 GB, so it is not stored in this repository. Only the em
 
 ## Running the notebooks
 
-Open `notebooks/01_eda.ipynb` and run all cells. It reads the data with relative paths (`../data/...`), so run it from the `notebooks/` folder, which is the default in VS Code and Jupyter. A full run takes about a minute, most of it loading the six CSVs.
+Run the notebooks in order, from the `notebooks/` folder, since they read the data with relative paths (`../data/...`).
+
+| Notebook | Run time | Writes |
+|---|---|---|
+| `01_eda.ipynb` | about 1 minute | nothing |
+| `02_feature_engineering_and_models.ipynb` | about 25 minutes (most of it is tuning) | `configs/final_model.json`, `outputs/models/`, `outputs/predictions/` |
+
+## Latest final model
+
+`outputs/` always holds the **latest final model** from notebook 02, together with its predictions on the test months (6-7) of Base and all 5 variants, so you can use them without re-running the notebook. Whenever notebook 02 is changed and re-run, commit the notebook, `configs/final_model.json` and `outputs/` together, so they always match.
+
+**Current model:** XGBoost, tuned, trained on Base months 0-3, with the threshold for each seed picked on month 5. The exact settings and thresholds are in `configs/final_model.json`.
+
+| File | Contents |
+|---|---|
+| `configs/final_model.json` | Model name, settings, feature options and the threshold for each seed |
+| `outputs/models/xgboost_seed0.joblib` ... `seed4.joblib` | The trained model for each seed |
+| `outputs/predictions/<dataset>_test_seed0.csv` | Seed-0 scores for months 6-7 of each dataset, with columns `row_id` (row number in the original CSV), `month`, `y_true`, `score`, `customer_age` |
+
+An application is flagged when its `score` is at least the seed's threshold. The scores are **not probabilities**: fraud cases were weighted about 26x during training, so they need calibrating before being read as probabilities.
+
+To score other data with the saved model, run notebook 02 up to section 4.2 (which defines `make_features`, no training needed), then:
+
+```python
+import json
+import joblib
+
+final_model = json.load(open('../configs/final_model.json'))
+model = joblib.load('../outputs/models/xgboost_seed0.joblib')
+threshold = final_model['thresholds']['0']
+
+X = make_features(df, **final_model['features'])
+scores = model.predict_proba(X)[:, 1]
+flagged = scores >= threshold
+```
+
+**Latest test results** (months 6-7, mean over 5 seeds; full discussion in notebook 02, section 8):
+
+| Dataset | Recall at 5% FPR | ROC-AUC | FPR with the frozen threshold | Predictive equality |
+|---|---|---|---|---|
+| Base | 0.548 | 0.894 | 5.3% | 0.31 |
+| Variant I | 0.514 | 0.884 | 4.9% | 0.31 |
+| Variant II | 0.551 | 0.897 | 8.4% | 0.31 |
+| Variant III | 0.468 | 0.870 | 8.4% | 0.31 |
+| Variant IV | 0.468 | 0.870 | 8.4% | 0.31 |
+| Variant V | 0.484 | 0.873 | 8.3% | 0.31 |
+
+- The model wrongly flags about 12.7% of genuine applicants aged 50+ vs 3.9% of those under 50 on every dataset (predictive equality 0.31, in line with the BAF paper).
+- The frozen threshold flags more than 5% on Variants II-V because half of their applicants are 50+, the group the model flags more often.
+- Accuracy is highest where age really predicts fraud (Base, Variant II) and lowest where it doesn't (Variants III-V), which suggests the model relies on `customer_age`.
+
+## How models are evaluated
+
+These rules are set at the start of notebook 02 (section 2), before any model is trained, and are the same for every model and every dataset.
+
+| Months | Used for |
+|---|---|
+| 0-3 | training the models |
+| 4 | comparing models and tuning (validation) |
+| 5 | picking the threshold for the final model |
+| 6-7 | final results, on Base and on all 5 variants |
+
+- **Train and tune on Base only.** The final model is then scored, unchanged, on months 6-7 of Base and of every variant. Nothing is refit or re-tuned on the variants.
+- **Seeds.** Every model is trained with seeds 0-4; results are reported as mean ± standard deviation.
+- **Main metric: recall at 5% false positive rate (FPR).** If at most 5% of genuine applications may be flagged, what share of fraud is caught?
+- **Threshold.** For the final model, the threshold that flags 5% of genuine applications is picked on month 5 and then applied unchanged to every test set.
+- **Fairness.** Age groups are 50+ vs under 50. The main fairness metric is **predictive equality**: the lower group's FPR divided by the higher group's FPR (1 = genuine applicants in both groups are wrongly flagged equally often).
+- **`month` is never a model feature.**
+- **Once the test results (section 8) have been run, the earlier sections are not changed**, so the test results never steer the model.
+
+Notes on the variants:
+- `x1` and `x2` (only in Variants III and V) are dropped, because the Base model never sees them.
+- Variant IV's test months contain exactly the same applications as Variant III's, so the two give identical results. The bias in Variants IV and V is only in months 0-5, which the Base model never trains on.
+
+## Notebook 02: what each section does
+
+| Section | What happens |
+|---|---|
+| 1. Imports | Libraries and plot settings |
+| 2. Load and split | Loads Base, splits it by month, defines the metric |
+| 3. Preprocessing | `-1` / negative values become NaN with a `<column>_missing` flag, `device_fraud_count` dropped, `income` rounded, categories fixed, `x1`/`x2` dropped |
+| 4. Feature engineering | Tests each feature idea one at a time on month 4 (LightGBM and logistic regression, 5 seeds each), plus a drift check, then fixes the final feature set |
+| 5. Model comparison | Logistic regression, LightGBM and XGBoost with their starting settings |
+| 6. Tuning | Optuna, 50 trials for each of the three models; the top 3 trials of each are re-checked over 5 seeds, and the best tuned model is picked automatically |
+| 7. Freeze the final model | Trains the final model for each seed, picks the thresholds on month 5, saves everything |
+| 8. Score on Base and all 5 variants | Scores months 6-7 of every dataset with the frozen model and reports the metrics |
