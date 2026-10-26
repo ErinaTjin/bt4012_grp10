@@ -5,10 +5,11 @@ Fraud detection on the [Bank Account Fraud (BAF) Dataset Suite](https://www.kagg
 ## Repository structure
 
 ```
-data/                 # the BAF CSVs go here (not committed, see "Getting the data")
+data/                 # the BAF CSVs and FiFAR go here (not committed, see "Getting the data")
 notebooks/
   01_eda.ipynb                              # exploratory data analysis
   02_feature_engineering_and_models.ipynb   # features, models, tuning, final model, test results
+  03_human_ai_review.ipynb                  # FiFAR: when should an alert go to a human analyst?
 configs/
   final_model.json    # the frozen final model: settings, features, thresholds (written by notebook 02)
 outputs/              # the latest final model and its test predictions (written by notebook 02)
@@ -20,6 +21,7 @@ requirements.txt
 ## Prerequisites
 
 - Python 3.12 (3.11 or newer is required by pandas 3)
+- **macOS only:** XGBoost needs the OpenMP library. Install it with `brew install libomp`, otherwise loading the saved model fails with "libomp.dylib could not be loaded".
 
 ## Setup
 
@@ -31,7 +33,7 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-In VS Code / Jupyter, select the `.venv` kernel before running a notebook.
+In VS Code / Jupyter, select the `.venv` kernel before running a notebook. Errors such as "Missing optional dependency 'pyarrow'" or "No type extension with name arrow.py_extension_type" mean another Python is being used: switch the kernel to `.venv`.
 
 ## Getting the data
 
@@ -60,6 +62,19 @@ The dataset is about 1.3 GB, so it is not stored in this repository. Only the em
 
 **Sanity check:** `Base.csv` should have 1,000,000 rows, of which 11,029 are fraud (`fraud_bool = 1`). The EDA notebook prints both numbers in section 3.2.
 
+**Keep the rows in Kaggle's original order** (the first rows are month 7). `outputs/predictions/` refers to rows by their row number, so a re-sorted `Base.csv` will not line up with it.
+
+### FiFAR (for notebook 03)
+
+The [Financial Fraud Alert Review (FiFAR)](https://springernature.figshare.com/articles/dataset/Financial_Fraud_Alert_Review_Dataset/28351172) dataset is a single zip of about 209 MB. From the project root:
+
+```sh
+curl -L -o data/FiFAR.zip https://ndownloader.figshare.com/files/52147616
+unzip data/FiFAR.zip -d data && mv data/FiFAR data/fifar && rm data/FiFAR.zip
+```
+
+The folder should then contain `data/fifar/alert_data/`, `data/fifar/synthetic_experts/` and `data/fifar/testbed/`. FiFAR also includes its own copy of `Base.csv` (`data/fifar/alert_data/Base.csv`), identical to Kaggle's.
+
 ## Running the notebooks
 
 Run the notebooks in order, from the `notebooks/` folder, since they read the data with relative paths (`../data/...`).
@@ -68,6 +83,7 @@ Run the notebooks in order, from the `notebooks/` folder, since they read the da
 |---|---|---|
 | `01_eda.ipynb` | about 1 minute | nothing |
 | `02_feature_engineering_and_models.ipynb` | about 25 minutes (most of it is tuning) | `configs/final_model.json`, `outputs/models/`, `outputs/predictions/` |
+| `03_human_ai_review.ipynb` | under 1 minute | nothing (uses the saved model in `outputs/`, so notebook 02 does not need re-running) |
 
 ## Latest final model
 
