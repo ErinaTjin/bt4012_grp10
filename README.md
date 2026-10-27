@@ -10,6 +10,7 @@ notebooks/
   01_eda.ipynb                              # exploratory data analysis
   02_feature_engineering_and_models.ipynb   # features, models, tuning, final model, test results
   03_human_ai_review.ipynb                  # FiFAR: when should an alert go to a human analyst?
+  model_loading.py                          # load_model(): loads the saved models on any OS, Windows included
 configs/
   final_model.json    # the frozen final model: settings, features, thresholds (written by notebook 02)
 outputs/              # the latest final model and its test predictions (written by notebook 02)
@@ -22,6 +23,7 @@ requirements.txt
 
 - Python 3.12 (3.11 or newer is required by pandas 3)
 - **macOS only:** XGBoost needs the OpenMP library. Install it with `brew install libomp`, otherwise loading the saved model fails with "libomp.dylib could not be loaded".
+- **Windows only:** `joblib.load` on the saved models fails with "input stream corrupted", because the models were saved on macOS and XGBoost on Windows stores one training-only setting (the random number generator state) differently. Load them with `load_model` from `notebooks/model_loading.py` instead; the scores are the same.
 
 ## Setup
 
@@ -39,12 +41,12 @@ In VS Code / Jupyter, select the `.venv` kernel before running a notebook. Error
 
 The dataset is about 1.3 GB, so it is not stored in this repository. Only the empty `data/` folder is committed.
 
-1. Download the dataset from Kaggle: https://www.kaggle.com/datasets/sgpjesus/bank-account-fraud-dataset-neurips-2022
-   - **Option A (browser):** click **Download**, then unzip the archive.
-   - **Option B (Kaggle CLI):** with an [API token](https://www.kaggle.com/docs/api) set up, run
+1. Download **version 1** of the dataset from Kaggle: https://www.kaggle.com/datasets/sgpjesus/bank-account-fraud-dataset-neurips-2022/versions/1. Kaggle's default download is version 2, which has the same rows sorted by month, so its row numbers do not match `outputs/predictions/`.
+   - **Option A (browser):** open the version 1 link, click **Download**, then unzip the archive.
+   - **Option B (Kaggle CLI):** with an [API token](https://www.kaggle.com/docs/api) set up, run (the `/1` at the end picks version 1)
      ```sh
      pip install kaggle
-     kaggle datasets download -d sgpjesus/bank-account-fraud-dataset-neurips-2022 -p data --unzip
+     kaggle datasets download sgpjesus/bank-account-fraud-dataset-neurips-2022/1 -p data --unzip
      ```
 2. Put the six CSV files in the `data/` folder. **Keep the original file names from Kaggle** (capitals and spaces included), because the notebooks read them by those names.
 
@@ -103,10 +105,10 @@ To score other data with the saved model, run notebook 02 up to section 4.2 (whi
 
 ```python
 import json
-import joblib
+from model_loading import load_model   # works on Windows too, see Prerequisites
 
 final_model = json.load(open('../configs/final_model.json'))
-model = joblib.load('../outputs/models/xgboost_seed0.joblib')
+model = load_model('../outputs/models/xgboost_seed0.joblib')
 threshold = final_model['thresholds']['0']
 
 X = make_features(df, **final_model['features'])
