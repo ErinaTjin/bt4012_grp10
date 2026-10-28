@@ -164,3 +164,41 @@ Notes on the variants:
 | 6. Tuning | Optuna, 50 trials for each of the three models; the top 3 trials of each are re-checked over 5 seeds, and the best tuned model is picked automatically |
 | 7. Freeze the final model | Trains the final model for each seed, picks the thresholds on month 5, saves everything |
 | 8. Score on Base and all 5 variants | Scores months 6-7 of every dataset with the frozen model and reports the metrics |
+
+## Notebook 03: human-AI review of fraud alerts (FiFAR)
+
+**Question:** analysts can only review part of the fraud alerts. Which alerts should the model decide by itself, and which should go to an analyst?
+
+The frozen model from notebook 02 is reused unchanged; nothing is retrained. FiFAR's alerts cover months 3-7:
+
+| Months | Used for |
+|---|---|
+| 3 | not used (the model was trained on these applications) |
+| 4-6 | history: measuring each analyst, picking a threshold for alerts and the best analysts |
+| 7 | test: comparing the review policies (4,457 alerts) |
+
+| Section | What happens |
+|---|---|
+| 1-2. Imports, months used | Libraries, plot settings and the month split above |
+| 3. Load FiFAR | Loads the alerts and analyst decisions, recovers the alert model's threshold (0.0510) and its FPR / recall per month, and links every alert to its row in `Base.csv` |
+| 4. Score the alerts | Scores the alerts with the saved models (matching notebook 02's saved predictions) and compares the model with Feedzai's alert model |
+| 5. Profile the analysts | Recall, FPR and age fairness of each of the 50 analysts on the history months |
+| 6. Who should decide each alert? | Picks a lowest-cost threshold for alerts, then simulates 6 review policies across analyst capacity (0-100%) and cost ratios (5, 10, 20, 50), 5 runs each |
+| 7. Summary | Plain-language results and recommendations |
+
+**Cost:** cost = cost ratio × missed fraud + false alarms, where the cost ratio is how many false alarms one missed fraud is worth. Results below use a ratio of 10, per 1,000 month-7 alerts (lower is better):
+
+| Policy | Cost | Recall | FPR | FPR 50+ / under 50 |
+|---|---|---|---|---|
+| AI only | 796 | 0.72 | 0.42 | 0.51 / 0.38 |
+| Analysts only (random analyst, every alert) | 511 | 0.91 | 0.44 | 0.48 / 0.43 |
+| 50% reviewed: random alerts | 651 | 0.82 | 0.44 | 0.49 / 0.41 |
+| 50% reviewed: highest-risk alerts | 683 | 0.71 | 0.27 | 0.32 / 0.25 |
+| 50% reviewed: alerts the model is least sure about | 583 | 0.85 | 0.41 | 0.48 / 0.38 |
+| 50% reviewed: least-sure alerts, 10 best analysts | **510** | 0.84 | 0.30 | 0.37 / 0.27 |
+
+- About half of all fraud is never alerted, so no review policy can catch it. Among alerts, 12% are fraud.
+- On alerts, every one of the 50 analysts beats the model at the same FPR; the best catches 78% of fraud at a 1.2% FPR, where the model catches 9%.
+- Sending the alerts the model is least sure about to the 10 best analysts is the cheapest capacity-limited policy at every capacity and cost ratio. At 50% capacity it matches analysts reviewing every alert.
+- At a cost ratio of 50, random analysts make things worse than AI only (1,065 vs 853); only the best-analysts policy still beats it.
+- Every policy wrongly flags genuine applicants aged 50+ more often. The best analysts are among the most age-biased, so the cheapest policy is not the fairest.
