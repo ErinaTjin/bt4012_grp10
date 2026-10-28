@@ -125,7 +125,7 @@ flagged = scores >= threshold
 | Variant II | 0.551 | 0.897 | 8.4% | 0.31 |
 | Variant III | 0.468 | 0.870 | 8.4% | 0.31 |
 | Variant IV | 0.468 | 0.870 | 8.4% | 0.31 |
-| Variant V | 0.484 | 0.873 | 8.3% | 0.31 |
+| Variant V | 0.483 | 0.873 | 8.3% | 0.31 |
 
 - The model wrongly flags about 12.7% of genuine applicants aged 50+ vs 3.9% of those under 50 on every dataset (predictive equality 0.31, in line with the BAF paper).
 - The frozen threshold flags more than 5% on Variants II-V because half of their applicants are 50+, the group the model flags more often.
