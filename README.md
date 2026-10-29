@@ -10,6 +10,7 @@ notebooks/
   01_eda.ipynb                              # exploratory data analysis
   02_feature_engineering_and_models.ipynb   # features, models, tuning, final model, test results
   03_human_ai_review.ipynb                  # FiFAR: when should an alert go to a human analyst?
+  04_evaluation.ipynb                       # test results in depth, calibration, real-world checks
   model_loading.py                          # load_model(): loads the saved models on any OS, Windows included
 configs/
   final_model.json    # the frozen final model: settings, features, thresholds (written by notebook 02)
@@ -86,6 +87,7 @@ Run the notebooks in order, from the `notebooks/` folder, since they read the da
 | `01_eda.ipynb` | about 1 minute | nothing |
 | `02_feature_engineering_and_models.ipynb` | about 25 minutes (most of it is tuning) | `configs/final_model.json`, `outputs/models/`, `outputs/predictions/` |
 | `03_human_ai_review.ipynb` | under 1 minute | nothing (uses the saved model in `outputs/`, so notebook 02 does not need re-running) |
+| `04_evaluation.ipynb` | about 5 minutes (about 4 once the score cache exists) | `data/cache/scores.parquet` (not committed; the scores of every dataset and seed, reused on later runs) |
 
 ## Latest final model
 
@@ -204,3 +206,33 @@ The frozen model from notebook 02 is reused unchanged; nothing is retrained. FiF
 - Sending the alerts the model is least sure about to the 10 best analysts is the cheapest capacity-limited policy at every capacity and cost ratio. At 50% capacity it matches analysts reviewing every alert.
 - At a cost ratio of 50, random analysts make things worse than AI only (1,065 vs 853); only the best-analysts policy still beats it.
 - Every policy wrongly flags genuine applicants aged 50+ more often. The best analysts are among the most age-biased, so the cheapest policy is not the fairest.
+
+## Notebook 04: evaluation and real-world checks
+
+**Question:** how sure can we be of the test results, and would the frozen model work in a real bank?
+
+The frozen model from notebook 02 is reused unchanged; nothing is retrained. Anything that has to be fitted or chosen here (the calibrator, cost-based thresholds, the alert rate) uses **Base month 5 only**; months 6-7 are only used to measure the results.
+
+| Section | What happens |
+|---|---|
+| 1-3. Imports, setup, scoring | Scores Base (all months) and every variant (months 5-7) with all 5 seeds, caches them, and checks them against `outputs/predictions/` |
+| 4. Test results over 5 seeds | Mean ± standard deviation on every dataset (matches notebook 02 section 8) |
+| 5. Bootstrap confidence intervals | 1,000 resamples of the test applications: how much each number could move by chance |
+| 6. Performance by month | Every metric per month, including how far the frozen threshold's FPR drifts |
+| 7. Calibration | Platt, isotonic and a formula that undoes the 26x fraud weight, fitted on month 5; reliability plots |
+| 8. Different fraud rates | Precision and false alarms per caught fraud if fraud were 0.1%-5% of applications |
+| 9. Cost-based thresholds | Cheapest threshold for cost ratios 5, 10, 20, 50 (same cost as notebook 03) |
+| 10. Which threshold rule holds up | Fixed score, fixed alert rate, cost-based rule, and an oracle ceiling, across months and variants |
+| 11. Drift over time | How much the scores and each input shift from the training months (PSI) |
+| 12. Customer groups | Error rates by age, income, employment, housing, source, device and payment type |
+| 13. Summary | Results and recommendations in plain language |
+
+Main results (Base test months 6-7, mean over 5 seeds, 95% confidence intervals in brackets):
+
+- **Recall at 5% FPR is 0.548 (0.529-0.566)**, ROC-AUC 0.894 (0.888-0.899). The 5 seeds differ by only ± 0.002.
+- **There is no steady decline over time:** recall at 5% FPR is 0.543 in month 5, 0.524 in month 6 and 0.578 in month 7. Month 6 is also the month whose inputs shift the most.
+- **The fixed score threshold doesn't hold its 5% FPR:** 5.9% in month 6, 4.7% in month 7, and 7.6-8.8% on Variants II-V. Flagging a fixed share of applications (5.6%, the month-5 rate) keeps FPR at 4.8-5.1% everywhere.
+- **Platt calibration makes the scores honest probabilities** (calibration error 0.0015, against 0.110 for the raw scores). It holds on month 6, but is about a fifth too low in month 7, where fraud is more common.
+- **At low fraud rates most flags are false alarms:** at 0.1% fraud, about 95 genuine applicants are flagged for every fraud caught.
+- **A cost-based threshold is cheaper but less fair:** at a cost ratio of 10, it costs 5% less than the frozen threshold, but predictive equality falls from 0.307 to 0.247.
+- **Genuine applicants aged 50+ are wrongly flagged about 3x as often** (12.7% vs 3.9%). Across groups, how often a group is wrongly flagged closely follows its fraud rate (Spearman correlation 0.98).
