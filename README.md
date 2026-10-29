@@ -14,6 +14,7 @@ notebooks/
   model_loading.py                          # load_model(): loads the saved models on any OS, Windows included
 configs/
   final_model.json    # the frozen final model: settings, features, thresholds (written by notebook 02)
+  calibration.json    # the Platt calibrator that turns scores into probabilities (written by notebook 04)
 outputs/              # the latest final model and its test predictions (written by notebook 02)
   models/             #   the trained model for each seed
   predictions/        #   scores on months 6-7 of Base and all 5 variants
@@ -98,10 +99,18 @@ Run the notebooks in order, from the `notebooks/` folder, since they read the da
 | File | Contents |
 |---|---|
 | `configs/final_model.json` | Model name, settings, feature options and the threshold for each seed |
+| `configs/calibration.json` | The Platt calibrator for each seed (two numbers each), fitted on Base month 5 by notebook 04 |
 | `outputs/models/xgboost_seed0.joblib` ... `seed4.joblib` | The trained model for each seed |
 | `outputs/predictions/<dataset>_test_seed0.csv` | Seed-0 scores for months 6-7 of each dataset, with columns `row_id` (row number in the original CSV), `month`, `y_true`, `score`, `customer_age` |
 
-An application is flagged when its `score` is at least the seed's threshold. The scores are **not probabilities**: fraud cases were weighted about 26x during training, so they need calibrating before being read as probabilities.
+An application is flagged when its `score` is at least the seed's threshold. The scores are **not probabilities**: fraud cases were weighted about 26x during training, so they need calibrating before being read as probabilities. Use `calibrate` from `notebooks/model_loading.py`, which applies `configs/calibration.json` (notebook 04, section 7.4):
+
+```python
+from model_loading import calibrate
+
+probabilities = calibrate(scores, seed=0)                    # chance of fraud, at the month-5 fraud rate (1.18%)
+probabilities = calibrate(scores, seed=0, fraud_rate=0.015)  # corrected to a different, known fraud rate
+```
 
 To score other data with the saved model, run notebook 02 up to section 4.2 (which defines `make_features`, no training needed), then:
 
