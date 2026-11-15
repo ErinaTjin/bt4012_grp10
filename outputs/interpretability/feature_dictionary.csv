@@ -1,0 +1,25 @@
+group,SHAP rank,permutation rank,model direction,meaning,known at decision time?,business story,to follow up
+device_os,1,2,categorical (section 12),operating system of the device used,"yes, recorded at application",Windows 2.2% vs Linux 0.4% fraud in months 0-3; fraud attempts may come from different devices,
+housing_status,2,1,categorical (section 12),housing status of the applicant (anonymised codes BA-BG),"yes, stated on the application","BA has 3.3% fraud, BE 0.3%; the codes are anonymised, so no story can be told from the data alone",meaning of the codes unknown; age proxy (AUC 0.67 for 50+)
+phone_home_valid,3,3,higher -> less fraud,home phone number passes validation,yes,an invalid number is a typical sign of a made-up identity,age proxy (AUC 0.62 for 50+)
+prev_address_months_count,4,6,higher -> more fraud,months at previous address; missing if none,yes,no previous address on record goes with 5x the fraud rate (1.28% vs 0.27%),direction among present values differs from the EDA table (the -1 codes)
+has_other_cards,5,4,higher -> less fraud,applicant has other cards from the same bank,yes,existing customers are lower risk,
+name_email_similarity,6,5,higher -> less fraud,similarity between the email address and the name,yes,a very different email can mean a made-up identity,
+current_address_months_count,7,11,higher -> more fraud,months at current address,yes,no obvious story for the rise at 50-100 months and the fall after 150,non-monotone and an age proxy: explain before using in the report
+keep_alive_session,8,8,higher -> less fraud,applicant chose to stay logged in,"yes, behaviour in the session",genuine customers more often keep sessions alive,
+email_is_free,9,7,higher -> more fraud,email is from a free domain,yes,free addresses are easy to create in bulk,
+income,10,10,higher -> more fraud,"stated income, in tenths","yes, self-reported",higher stated income goes with more fraud (0.5% to 1.9%); the top band adds about +0.4 to +0.5,unverified; check group FPR for the top band (notebook 04)
+employment_status,11,9,categorical (section 12),employment status (anonymised codes CA-CG),"yes, stated","CC has 2.3% fraud, CF 0.2%; codes anonymised",age proxy (AUC 0.61 for 50+)
+customer_age,12,14,higher -> more fraud,age in decades,yes,fraud rate rises with age in this data,protected attribute: see section 20 and notebook 06
+bank_branch_count_8w,13,16,higher -> less fraud,applications at the bank branch in the last 8 weeks,"yes, if the window ends at the application",branch volume; the jagged effect has no obvious story,check stability (section 16)
+credit_risk_score,14,12,higher -> more fraud,bank internal risk score of the application,to confirm,"higher score goes with more fraud, mostly above about 230",confirm the score is computed before the decision and not influenced by fraud checks
+days_since_request,15,17,higher -> less fraud,days since the application was made (BAF datasheet wording),to confirm,very irregular effect at small values (section 11),confirm the definition and that it is known at decision time
+bank_months_count,16,19,higher -> more fraud,age of the previous bank account in months; missing if none,yes,missing for 25% of applications,
+intended_balcon_amount,17,15,unclear,initial transfer amount; missing if negative,yes,missing for 74% of applications,
+date_of_birth_distinct_emails_4w,18,18,higher -> less fraud,distinct emails among applications with the same date of birth in 4 weeks,"yes, a past window",many emails for one birth date suggests repeated attempts,strongest age proxy (AUC 0.81 for 50+); drifts (PSI 0.46 in the EDA)
+session_length_in_minutes,19,22,unclear,length of the session in minutes,yes,,
+device_distinct_emails_8w,20,20,higher -> more fraud,distinct emails seen on the device in 8 weeks,"yes, a past window",one device used for many emails suggests repeated attempts,rare large effects (section 19)
+proposed_credit_limit,21,13,higher -> less fraud,credit limit asked for,yes,"non-monotone: strong push towards fraud at 1500 and above, especially 2000 (section 15)",rare large effects (section 19); the Spearman sign in section 10 is misleading
+zip_count_vs_velocity_4w,22,21,higher -> more fraud,ratio of two application counts,"yes, past windows",relative level of recent activity,built to avoid drift (notebook 02)
+velocity_24h_vs_4w,23,28,higher -> more fraud,,,,
+phone_mobile_valid,24,24,higher -> less fraud,,,,
