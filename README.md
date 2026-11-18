@@ -11,6 +11,8 @@ notebooks/
   02_feature_engineering_and_models.ipynb   # features, models, tuning, final model, test results
   03_human_ai_review.ipynb                  # FiFAR: when should an alert go to a human analyst?
   04_evaluation.ipynb                       # test results in depth, calibration, real-world checks
+  05_interpretability.ipynb                 # what drives the model's decisions: SHAP, importance, reason codes
+  06_fairness_accountability.ipynb          # age and other group gaps, mitigations, review workflow, accountability
   model_loading.py                          # load_model(): loads the saved models on any OS, Windows included
 configs/
   final_model.json    # the frozen final model: settings, features, thresholds (written by notebook 02)
@@ -18,6 +20,7 @@ configs/
 outputs/              # the latest final model and its test predictions (written by notebook 02)
   models/             #   the trained model for each seed
   predictions/        #   scores on months 6-7 of Base and all 5 variants
+  interpretability/   #   feature_dictionary.csv: meaning and role of each raw column (written by notebook 05)
 requirements.txt
 ```
 
@@ -38,6 +41,10 @@ pip install -r requirements.txt
 ```
 
 In VS Code / Jupyter, select the `.venv` kernel before running a notebook. Errors such as "Missing optional dependency 'pyarrow'" or "No type extension with name arrow.py_extension_type" mean another Python is being used: switch the kernel to `.venv`.
+
+**Optional packages.** Two cross-checks use packages that are not in `requirements.txt`, and are skipped (with a message) when they are missing; every reported result runs without them:
+- `fairlearn` (notebook 06, section 2.1): a second check of the hand-written fairness metrics, `pip install fairlearn`
+- `interpret` (notebook 05, section 22): an Explainable Boosting Machine as an extra interpretable model, `pip install interpret`, then set `RUN_EBM = True`
 
 ## Getting the data
 
@@ -89,6 +96,10 @@ Run the notebooks in order, from the `notebooks/` folder, since they read the da
 | `02_feature_engineering_and_models.ipynb` | about 25 minutes (most of it is tuning) | `configs/final_model.json`, `outputs/models/`, `outputs/predictions/` |
 | `03_human_ai_review.ipynb` | under 1 minute | nothing (uses the saved model in `outputs/`, so notebook 02 does not need re-running) |
 | `04_evaluation.ipynb` | about 5 minutes (about 4 once the score cache exists) | `data/cache/scores.parquet` (not committed; the scores of every dataset and seed, reused on later runs) |
+| `05_interpretability.ipynb` | about 10 minutes (permutation importance and the section-22 retraining take most of it) | `outputs/interpretability/feature_dictionary.csv` |
+| `06_fairness_accountability.ipynb` | about 20 minutes the first time, a few minutes once its caches exist | `data/cache/*.parquet` (not committed; the scores of the retrained variant and mitigation models, reused on later runs). Needs all six BAF files and FiFAR (section 11), and reuses notebook 04's score cache if it exists |
+
+Notebooks 03-06 only read the saved model in `outputs/` and `configs/`, so they can be run in any order and without re-running notebook 02.
 
 ## Latest final model
 
@@ -245,3 +256,64 @@ Main results (Base test months 6-7, mean over 5 seeds, 95% confidence intervals 
 - **At low fraud rates most flags are false alarms:** at 0.1% fraud, about 95 genuine applicants are flagged for every fraud caught.
 - **A cost-based threshold is cheaper but less fair:** at a cost ratio of 10, it costs 5% less than the frozen threshold, but predictive equality falls from 0.307 to 0.247.
 - **Genuine applicants aged 50+ are wrongly flagged about 3x as often** (12.7% vs 3.9%). Across groups, how often a group is wrongly flagged closely follows its fraud rate (Spearman correlation 0.98).
+
+## Notebook 05: interpretability
+
+**Question:** what does the frozen model rely on, do its explanations make sense and hold up, and how much accuracy would a simpler model cost?
+
+The frozen model is only read, never changed. Explanations use Base months 6-7 (month 5 as a check), and are given in calibrated log-odds using notebook 04's Platt calibrator, so they start from a real fraud rate. The one place where models are trained (section 22) chooses on month 4 and reports months 6-7 once.
+
+| Section | What happens |
+|---|---|
+| 1-3. Imports, setup, data | The frozen models, the calibrator and the Base test months |
+| 4. Feature contributions (TreeSHAP) | XGBoost's built-in SHAP values for all 5 seeds, with checks that they add up to the model's output |
+| 5-7. Global and grouped importance | Beeswarm; a value and its `_missing` flag, and correlated pairs, counted together |
+| 6. Calibrated baseline | Shows the explanations start from about a 1.2% fraud rate |
+| 8-9. Permutation importance | The drop in recall at 5% FPR and PR-AUC when each feature is shuffled, compared with SHAP and single-feature AUC |
+| 10-12. Directions and shapes | Does each feature push the way the data does? Dependence plots, category-by-category effects |
+| 13. Surrogate tree | A small decision tree that mimics the model |
+| 14. Reason codes | Plain-language reasons for individual flagged applications |
+| 15-16. Irregular effects | Credit limit and the non-monotone shapes, checked against the data in two periods |
+| 17-18. Stability and drift | Explanations across seeds, similar applications and months |
+| 19. Rare but large effects | Features that matter strongly for a few applications |
+| 20. What drives the age gap? | Which features carry the 50+ vs under-50 difference |
+| 21. Sanity table | One row per raw column: meaning, timing, story (saved as the feature dictionary) |
+| 22. Accuracy-cost experiments | Shallower trees, monotonic constraints and logistic regression against the frozen model |
+| 23. Report items | The threshold in cost terms, the feature dictionary, limitations |
+
+Main results:
+
+- **The explanations are trustworthy and stable.** The contributions add up to the model's output, and the 5 seeds rank the features almost identically (rank correlation at least 0.99).
+- **No single feature dominates and nothing looks like a leak.** The top feature, `device_os`, is about 10% of the total importance. SHAP and permutation importance agree (rank correlation 0.93-0.95): housing status and device OS matter most (recall drops of about 0.07 each when shuffled), then a valid home phone and having other cards.
+- **The model doesn't lean on the drifting features.** Shuffling the velocity ratios changes recall by at most 0.005, within noise, and importance shares stay flat across months.
+- **Directions match the data** for 21 of 22 numeric features, and the irregular up-and-down shapes are real patterns in the data, not overfitting.
+- **A simpler model costs little.** Depth-2 trees, an additive depth-1 model (1,500 trees) and monotonic constraints all stay within about 0.01 recall of the frozen model on month 4; logistic regression gives up about 4 points. The age gap (predictive equality about 0.29-0.32) is the same in every model, so it doesn't come from the model's complexity.
+
+## Notebook 06: fairness and accountability
+
+**Question:** how big are the gaps between customer groups, where do they come from, which interventions reduce them and at what cost, and what would a bank need to stay accountable?
+
+Sections 1-7 only score with the frozen model. Mitigations (section 8 onwards) train new models with the frozen settings, choose on month 4 (settings) and month 5 (thresholds), and look at months 6-7 once. Age (50+ vs under 50) is the main group; income, employment and housing are a second tier, picked from the training months before any test errors were seen.
+
+| Section | What happens |
+|---|---|
+| 1-2. Imports, setup | The protocol, the fairness metrics (predictive equality, equal opportunity and more) and confidence intervals |
+| 3. Data and proxy audit | Group sizes and fraud rates, intersections, and how well the other features predict age |
+| 4. The baseline on Base | Every metric with intervals, over time, at other FPR budgets, and calibration by group |
+| 5. Why is there a gap? | Score differences, what happens if the model can't see age, which features carry the difference |
+| 6. Second-tier groups | Income, employment and housing gaps, holding age fixed |
+| 7. The BAF variants | The frozen model on every variant, and a model trained on each variant |
+| 8. Mitigations | Dropping age (and more and more proxies), reweighing, group-specific thresholds |
+| 9. The trade-off | Fairness against recall and cost, across cost ratios, and what it costs in operations |
+| 10. Does a mitigation carry over? | Across months and onto every BAF variant; reweighing on housing status as an extension |
+| 11. Fairness in the review workflow | Notebook 03's analysts group by group, and routing rules that take fairness into account |
+| 12. Accountability | Model card, a decision log for every case, fairness monitoring with tolerances, owners and how to contest a decision |
+
+Main results (Base test months 6-7):
+
+- **The age gap is real and stable.** Genuine applicants aged 50+ are wrongly flagged 3.3x as often (FPR 12.7% vs 3.9%, predictive equality 0.31) in every month and on every BAF variant. The model ranks both groups equally well; the gap comes from one shared threshold applied to groups whose scores differ.
+- **The cause is mostly in the data.** Using `customer_age` directly explains about a quarter of the gap; the rest runs through many proxies. A model trained on data where age and fraud aren't linked has almost no gap.
+- **Removing age or its proxies is weak or expensive** (removing 12 proxies reaches 0.80 but loses more than half the recall). **Reweighing** (0.90) and **equal-FPR group thresholds** (0.91) close most of the gap for about 2 points of recall (about 3% more cost at a cost ratio of 10), and reweighing carries over to every BAF variant. Reweighing is preferred because it needs no age-dependent cut-off.
+- **Housing status has a larger gap** (predictive equality 0.08) that the age mitigations don't fix, and fixing it directly costs 14 points of recall.
+- **Human review helps but doesn't close the gap.** Choosing analysts with a predictive equality of at least 0.8 reaches 0.80 for about 17% more cost; notebook 03's cheapest policy (the best analysts) is the least fair.
+- **Accountability:** a model card, a per-case decision log, a monthly fairness monitor (floor 0.8, drop trigger 0.04), named owners and a route to contest a decision.
