@@ -39,6 +39,7 @@ outputs/
   models/        the frozen model, one file per seed (notebook 02)
   predictions/   the frozen model's test-month scores (notebook 02)
   interpretability/feature_dictionary.csv (notebook 05)
+  final_results.csv  the final system's main results, with 95% intervals (notebook 07)
 requirements.txt
 ```
 
